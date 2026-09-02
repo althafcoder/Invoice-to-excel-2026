@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>POC Invoice Extractor</title>
+    <style>
+        :root {
+            --primary-blue: #4A90E2;
+            --light-blue: #E8F1FA;
+            --white: #FFFFFF;
+            --text-dark: #333333;
+            --text-light: #777777;
+            --border-color: #B3D4F5;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--light-blue);
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            color: var(--text-dark);
+        }
+
+        .container {
+            background-color: var(--white);
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 8px 24px rgba(74, 144, 226, 0.15);
+            text-align: center;
+            max-width: 500px;
+            width: 100%;
+        }
+
+        h1 {
+            color: var(--primary-blue);
+            margin-bottom: 10px;
+        }
+
+        p {
+            color: var(--text-light);
+            margin-bottom: 30px;
+            line-height: 1.5;
+        }
+
+        .upload-area {
+            border: 2px dashed var(--border-color);
+            border-radius: 8px;
+            padding: 40px 20px;
+            background-color: #F8FBFF;
+            transition: all 0.3s ease;
+            margin-bottom: 20px;
+        }
+
+        .upload-area:hover {
+            border-color: var(--primary-blue);
+            background-color: var(--light-blue);
+        }
+
+        .file-input-wrapper {
+            position: relative;
+            overflow: hidden;
+            display: inline-block;
+        }
+
+        .btn {
+            border: none;
+            color: var(--white);
+            background-color: var(--primary-blue);
+            padding: 12px 24px;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+            display: inline-block;
+        }
+
+        .btn:hover {
+            background-color: #357ABD;
+        }
+
+        .file-input-wrapper input[type=file] {
+            font-size: 100px;
+            position: absolute;
+            left: 0;
+            top: 0;
+            opacity: 0;
+            cursor: pointer;
+        }
+
+        .file-list {
+            margin-top: 15px;
+            text-align: left;
+            font-size: 14px;
+            color: var(--text-dark);
+            max-height: 150px;
+            overflow-y: auto;
+        }
+
+        .flash-messages {
+            list-style-type: none;
+            padding: 0;
+            margin-bottom: 20px;
+        }
+
+        .flash-message {
+            background-color: #ffdddd;
+            color: #d8000c;
+            padding: 10px;
+            border-radius: 6px;
+            margin-bottom: 10px;
+            border: 1px solid #ffb3b3;
+        }
+
+        #loading {
+            display: none;
+            margin-top: 20px;
+            color: var(--primary-blue);
+            font-weight: bold;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid var(--primary-blue);
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+            vertical-align: middle;
+            margin-right: 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>Invoice Extractor</h1>
+        <p>Upload PDF invoices or images to automatically extract details and generate an Excel report.</p>
+
+        {% with messages = get_flashed_messages() %}
+            {% if messages %}
+                <ul class="flash-messages">
+                {% for message in messages %}
+                    <li class="flash-message">{{ message }}</li>
+                {% endfor %}
+                </ul>
+            {% endif %}
+        {% endwith %}
+
+        <form id="uploadForm" action="/upload" method="post" enctype="multipart/form-data">
+            <div class="upload-area">
+                <div class="file-input-wrapper">
+                    <button type="button" class="btn">Choose Files</button>
+                    <input type="file" name="files[]" id="fileInput" multiple required accept=".pdf,.png,.jpg,.jpeg">
+                </div>
+                <div class="file-list" id="fileList">No files selected</div>
+            </div>
+            
+            <button type="submit" class="btn" id="submitBtn" style="width: 100%;">Process Invoices</button>
+        </form>
+
+        <div id="loading">
+            <div class="spinner"></div>
+            Processing... This might take a while.
+        </div>
+    </div>
+
+    <script>
+        const fileInput = document.getElementById('fileInput');
+        const fileList = document.getElementById('fileList');
+        const uploadForm = document.getElementById('uploadForm');
+        const submitBtn = document.getElementById('submitBtn');
+        const loading = document.getElementById('loading');
+
+        fileInput.addEventListener('change', function() {
+            fileList.innerHTML = '';
+            if (this.files.length > 0) {
+                const list = document.createElement('ul');
+                list.style.paddingLeft = '20px';
+                list.style.margin = '0';
+                
+                for (let i = 0; i < this.files.length; i++) {
+                    const li = document.createElement('li');
+                    li.textContent = this.files[i].name;
+                    list.appendChild(li);
+                }
+                fileList.appendChild(list);
+            } else {
+                fileList.textContent = 'No files selected';
+            }
+        });
+
+        uploadForm.addEventListener('submit', async function(e) {
+            e.preventDefault(); // Prevent standard form submission
+            
+            if (fileInput.files.length === 0) return;
+
+            // Show loading state
+            submitBtn.style.display = 'none';
+            loading.style.display = 'block';
+
+            const formData = new FormData(this);
+
+            try {
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (response.ok) {
+                    // Check if the response is a file
+                    const blob = await response.blob();
+                    
+                    // Create a temporary link to download the file
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.style.display = 'none';
+                    a.href = url;
+                    
+                    // Try to get filename from content-disposition header if possible, 
+                    // otherwise default to Extracted_Invoices.xlsx
+                    const disposition = response.headers.get('Content-Disposition');
+                    let filename = "Extracted_Invoices.xlsx";
+                    if (disposition && disposition.indexOf('attachment') !== -1) {
+                        const filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/;
+                        const matches = filenameRegex.exec(disposition);
+                        if (matches != null && matches[1]) { 
+                            filename = matches[1].replace(/['"]/g, '');
+                        }
+                    }
+                    
+                    a.download = filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                    
+                    // Reset UI on success
+                    fileInput.value = '';
+                    fileList.innerHTML = 'No files selected';
+                } else {
+                    // Handle server errors (e.g., flash messages)
+                    alert('An error occurred during processing. Please try again.');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('A network error occurred. Please try again.');
+            } finally {
+                // Restore UI state regardless of success or failure
+                submitBtn.style.display = 'inline-block';
+                submitBtn.style.width = '100%';
+                loading.style.display = 'none';
+            }
+        });
+    </script>
+</body>
+</html>

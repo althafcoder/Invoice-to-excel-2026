@@ -1,9 +1,11 @@
 import os
 import subprocess
 import tempfile
-from flask import Flask, request, render_template, send_file, flash, redirect, url_for
+from flask import Flask, request, render_template, send_file, flash, redirect, url_for, jsonify
+from flask_cors import CORS
 
 app = Flask(__name__)
+CORS(app)
 app.secret_key = 'super_secret_key' # Needed for flashing messages
 
 # Set max upload size to 50MB (adjust if needed)
@@ -79,6 +81,66 @@ def upload_files():
     except Exception as e:
         flash(f'An error occurred: {str(e)}')
         return redirect(url_for('index'))
+
+@app.route('/api/upload', methods=['POST'])
+def api_upload_files():
+    if 'files[]' not in request.files:
+        return jsonify({"error": "No file part"}), 400
+    
+    files = request.files.getlist('files[]')
+    if not files or files[0].filename == '':
+        return jsonify({"error": "No selected files"}), 400
+        
+    try:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        script_path = os.path.join(base_dir, "extract_invoices_to_excel (1).py")
+        
+        import tempfile
+        with tempfile.TemporaryDirectory() as temp_dir:
+            input_dir = os.path.join(temp_dir, "input")
+            output_dir = os.path.join(temp_dir, "output")
+            os.makedirs(input_dir, exist_ok=True)
+            os.makedirs(output_dir, exist_ok=True)
+            
+            for file in files:
+                file_path = os.path.join(input_dir, file.filename)
+                file.save(file_path)
+                
+            output_excel = os.path.join(output_dir, "Astrya_Invoices.xlsx")
+            
+            import sys
+            import subprocess
+            result = subprocess.run(
+                [sys.executable, script_path, "--pdf_dir", input_dir, "--output", output_excel],
+                capture_output=True,
+                text=True
+            )
+            
+            if result.returncode != 0:
+                return jsonify({"error": f"Error processing files. Script output: {result.stderr}"}), 500
+                
+            if not os.path.exists(output_excel):
+                return jsonify({"error": "Output Excel file was not generated."}), 500
+                
+            import pandas as pd
+            import base64
+            
+            df = pd.read_excel(output_excel)
+            import numpy as np
+            df = df.replace({np.nan: None})
+            records = df.to_dict(orient="records")
+            
+            with open(output_excel, "rb") as f:
+                excel_base64 = base64.b64encode(f.read()).decode('utf-8')
+                
+            return jsonify({
+                "records": records,
+                "excel_base64": excel_base64
+            })
+            
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+        
         
 if __name__ == '__main__':
     app.run(debug=True, port=5000)

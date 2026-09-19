@@ -224,6 +224,23 @@ def call_gpt_vision(image_paths: List[str]) -> Dict:
                 ],
             )
             raw = response.choices[0].message.content
+            
+            try:
+                import sys, os
+                _cp = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
+                if _cp not in sys.path: sys.path.insert(0, _cp)
+                from core.universal_token_monitor import track_usage as _tm
+                
+                _tm(
+                    response.usage, 
+                    model=MODEL, 
+                    poc_name="INVOICE_EXCEL",
+                    file_name=image_paths[0] if image_paths else "unknown", 
+                    step_name="extraction"
+                )
+            except Exception:
+                pass
+                
             data = json.loads(raw)
             return {
                 "facility": data.get("facility"),

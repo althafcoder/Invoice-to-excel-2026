@@ -32,3 +32,9 @@ Thumbs.db
 .vscode/
 .idea/
 *.swp
+input/
+output/
+Astrya_Global_poc/
+Astrya_Global input/
+
+
